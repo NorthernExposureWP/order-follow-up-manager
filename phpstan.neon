@@ -4,6 +4,9 @@ includes:
 parameters:
     level: 5
 
+    scanFiles:
+        - phpstan-woocommerce-order.stub
+
     paths:
         - wp-content/plugins
 

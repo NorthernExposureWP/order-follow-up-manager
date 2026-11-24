@@ -1,0 +1,18 @@
+<?php
+
+/**
+ * Minimal WooCommerce order API surface used by the project plugin.
+ * WooCommerce itself is excluded from PHPStan analysis.
+ */
+class WC_Order
+{
+	public function get_meta(string $key = '', bool $single = false, string $context = 'view'): mixed {}
+
+	public function update_meta_data(string $key, mixed $value, mixed $meta_id = ''): void {}
+
+	public function delete_meta_data(string $key): void {}
+
+	public function save(): int {}
+
+	public function get_type(): string {}
+}

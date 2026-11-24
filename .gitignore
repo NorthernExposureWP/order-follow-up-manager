@@ -5,3 +5,4 @@
 /public/wp-content/
 /wp-content/uploads/
 /output.log
+.phpunit.cache/
