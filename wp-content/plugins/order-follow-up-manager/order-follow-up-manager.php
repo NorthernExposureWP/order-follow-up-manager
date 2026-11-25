@@ -18,6 +18,7 @@ namespace NorthernExposure\OrderFollowUpManager;
 defined('ABSPATH') || exit;
 
 require_once __DIR__ . '/includes/class-order-follow-up-metadata.php';
+require_once __DIR__ . '/includes/class-order-follow-up-admin.php';
 require_once __DIR__ . '/includes/class-plugin.php';
 
 add_action(

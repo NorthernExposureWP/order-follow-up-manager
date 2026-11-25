@@ -10,10 +10,13 @@ namespace NorthernExposure\OrderFollowUpManager;
 final class Plugin
 {
 	private OrderFollowUpMetadata $metadata;
+	private OrderFollowUpAdmin $admin;
 
 	public function initialize(): void
 	{
 		$this->metadata = new OrderFollowUpMetadata();
+		$this->admin    = new OrderFollowUpAdmin($this->metadata);
+		$this->admin->initialize();
 	}
 
 	public function metadata(): OrderFollowUpMetadata

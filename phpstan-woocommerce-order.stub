@@ -15,4 +15,10 @@ class WC_Order
 	public function save(): int {}
 
 	public function get_type(): string {}
+
+	public function get_id(): int {}
 }
+
+class WC_Order_Refund extends WC_Order {}
+
+function wc_get_order(int $order_id): WC_Order|false {}
