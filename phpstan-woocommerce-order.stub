@@ -1,5 +1,7 @@
 <?php
 
+namespace {
+
 /**
  * Minimal WooCommerce order API surface used by the project plugin.
  * WooCommerce itself is excluded from PHPStan analysis.
@@ -22,3 +24,11 @@ class WC_Order
 class WC_Order_Refund extends WC_Order {}
 
 function wc_get_order(int $order_id): WC_Order|false {}
+}
+
+namespace Automattic\WooCommerce\Utilities {
+class OrderUtil
+{
+	public static function custom_orders_table_usage_is_enabled(): bool {}
+}
+}
