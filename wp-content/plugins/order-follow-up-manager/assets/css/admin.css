@@ -1,0 +1,12 @@
+.nem-follow-up-checkbox label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	width: auto !important;
+}
+
+.nem-follow-up-checkbox input#nem_follow_up_required {
+	flex: 0 0 auto;
+	width: auto !important;
+	margin: 0;
+}
