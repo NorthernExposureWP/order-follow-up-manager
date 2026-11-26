@@ -17,6 +17,13 @@ namespace NorthernExposure\OrderFollowUpManager;
 
 defined('ABSPATH') || exit;
 
+add_action(
+	'before_woocommerce_init',
+	static function (): void {
+		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true); // @phpstan-ignore class.notFound
+	}
+);
+
 require_once __DIR__ . '/includes/class-order-follow-up-metadata.php';
 require_once __DIR__ . '/includes/class-order-follow-up-admin.php';
 require_once __DIR__ . '/includes/class-orders-list-integration.php';
