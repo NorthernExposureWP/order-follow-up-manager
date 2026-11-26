@@ -15,6 +15,8 @@ final class OrderFollowUpAdminIntegrationTest extends TestCase
 	private array $order_ids = [];
 	private int $previous_user_id = 0;
 	private array $original_post = [];
+	/** @var list<int> */
+	private array $user_ids = [];
 
 	protected function setUp(): void
 	{
@@ -33,6 +35,10 @@ final class OrderFollowUpAdminIntegrationTest extends TestCase
 			if ($order instanceof \WC_Order) {
 				$order->delete(true);
 			}
+		}
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		foreach ($this->user_ids as $user_id) {
+			wp_delete_user($user_id);
 		}
 		parent::tearDown();
 	}
@@ -101,16 +107,126 @@ final class OrderFollowUpAdminIntegrationTest extends TestCase
 	public function test_user_without_order_edit_permission_cannot_save(): void
 	{
 		$order = $this->createOrder();
-		$user_id = wp_insert_user(['user_login' => 'follow_up_no_edit_' . wp_generate_password(8, false), 'user_pass' => wp_generate_password(), 'role' => 'subscriber']);
-		self::assertIsInt($user_id);
+		$user_id = $this->createUser('subscriber');
 		wp_set_current_user($user_id);
 		$this->postFields('Unauthorized');
 		(new OrderFollowUpAdmin(new OrderFollowUpMetadata()))->saveFields($order->get_id());
 		$saved = wc_get_order($order->get_id());
 		self::assertFalse((new OrderFollowUpMetadata())->isRequired($saved));
 		self::assertSame('', (new OrderFollowUpMetadata())->getDetails($saved));
-		require_once ABSPATH . 'wp-admin/includes/user.php';
-		wp_delete_user($user_id);
+	}
+
+	public function test_user_without_order_edit_permission_does_not_see_controls(): void
+	{
+		$order = $this->createOrder();
+		$user_id = $this->createUser('subscriber');
+		wp_set_current_user($user_id);
+
+		ob_start();
+		(new OrderFollowUpAdmin(new OrderFollowUpMetadata()))->renderFields($order);
+		$html = (string) ob_get_clean();
+
+		self::assertSame('', $html);
+	}
+
+	public function test_general_admin_capability_does_not_grant_order_access_and_check_uses_order_id(): void
+	{
+		$order = $this->createOrder();
+		$user_id = $this->createUser('subscriber');
+		$user = get_user_by('id', $user_id);
+		self::assertInstanceOf(\WP_User::class, $user);
+		$user->add_cap('manage_woocommerce');
+		wp_set_current_user($user_id);
+
+		self::assertTrue(current_user_can('manage_woocommerce'));
+		self::assertFalse(current_user_can('edit_shop_order', $order->get_id()));
+
+		$capability_checks = [];
+		$record_check = static function (array $allcaps, array $caps, array $args, \WP_User $checked_user) use (&$capability_checks): array {
+			if ('edit_shop_order' === ($args[0] ?? null)) {
+				$capability_checks[] = [$checked_user->ID, $args[2] ?? null];
+			}
+			return $allcaps;
+		};
+		add_filter('user_has_cap', $record_check, 10, 4);
+		try {
+			ob_start();
+			(new OrderFollowUpAdmin(new OrderFollowUpMetadata()))->renderFields($order);
+			$html = (string) ob_get_clean();
+		} finally {
+			remove_filter('user_has_cap', $record_check, 10);
+		}
+
+		self::assertSame('', $html);
+		self::assertContains([$user_id, $order->get_id()], $capability_checks);
+	}
+
+	public function test_unauthorized_save_preserves_existing_metadata(): void
+	{
+		$order = $this->createOrder();
+		$metadata = new OrderFollowUpMetadata();
+		$metadata->setRequired($order);
+		$metadata->saveDetails($order, 'Existing follow-up details');
+		wp_set_current_user($this->createUser('subscriber'));
+		$this->postFields('Unauthorized replacement', false);
+
+		(new OrderFollowUpAdmin($metadata))->saveFields($order->get_id());
+
+		$saved = wc_get_order($order->get_id());
+		self::assertTrue($metadata->isRequired($saved));
+		self::assertSame('Existing follow-up details', $metadata->getDetails($saved));
+	}
+
+	public function test_general_admin_capability_does_not_allow_modifying_order_follow_up_metadata(): void
+	{
+		$order = $this->createOrder();
+		$metadata = new OrderFollowUpMetadata();
+		$metadata->setRequired($order);
+		$metadata->saveDetails($order, 'Existing follow-up details');
+
+		$user_id = $this->createUser('subscriber');
+		$user = get_user_by('id', $user_id);
+		self::assertInstanceOf(\WP_User::class, $user);
+		$user->add_cap('manage_woocommerce');
+		wp_set_current_user($user_id);
+
+		self::assertTrue(current_user_can('manage_woocommerce'));
+		self::assertFalse(current_user_can('edit_shop_order', $order->get_id()));
+
+		$this->postFields('Attempted replacement details');
+		(new OrderFollowUpAdmin($metadata))->saveFields($order->get_id());
+
+		$saved = wc_get_order($order->get_id());
+		self::assertTrue($metadata->isRequired($saved));
+		self::assertSame('Existing follow-up details', $metadata->getDetails($saved));
+	}
+
+	public function test_invalid_submissions_preserve_existing_metadata(): void
+	{
+		$order = $this->createOrder();
+		$metadata = new OrderFollowUpMetadata();
+		$metadata->setRequired($order);
+		$metadata->saveDetails($order, 'Existing follow-up details');
+		$admin = new OrderFollowUpAdmin($metadata);
+		$invalid_requests = [
+			'missing marker' => static function (): void { unset($_POST['nem_order_follow_up_submitted']); },
+			'invalid marker' => static function (): void { $_POST['nem_order_follow_up_submitted'] = '0'; },
+			'missing details' => static function (): void { unset($_POST['nem_follow_up_details']); },
+			'invalid nonce' => static function (): void { $_POST['nem_order_follow_up_nonce'] = 'invalid'; },
+			'malformed details' => static function (): void { $_POST['nem_follow_up_details'] = ['unexpected']; },
+			'malformed required value' => static function (): void { $_POST['nem_follow_up_required'] = ['yes']; },
+		];
+
+		foreach ($invalid_requests as $label => $mutate_request) {
+			$this->postFields('Replacement details', false);
+			$_POST['nem_follow_up_required'] = 'yes';
+			$mutate_request();
+			$admin->saveFields($order->get_id());
+
+			$saved = wc_get_order($order->get_id());
+			self::assertTrue($metadata->isRequired($saved), $label);
+			self::assertSame('Existing follow-up details', $metadata->getDetails($saved), $label);
+		}
 	}
 
 	public function test_invalid_orders_and_refunds_are_rejected(): void
@@ -136,6 +252,19 @@ final class OrderFollowUpAdminIntegrationTest extends TestCase
 		$order->save();
 		$this->order_ids[] = $order->get_id();
 		return $order;
+	}
+
+	private function createUser(string $role): int
+	{
+		$user_id = wp_insert_user([
+			'user_login' => 'follow_up_' . $role . '_' . wp_generate_password(8, false),
+			'user_pass' => wp_generate_password(),
+			'role' => $role,
+		]);
+		self::assertIsInt($user_id);
+		$this->user_ids[] = $user_id;
+
+		return $user_id;
 	}
 
 	private function postFields(string $details, bool $required = true): void
