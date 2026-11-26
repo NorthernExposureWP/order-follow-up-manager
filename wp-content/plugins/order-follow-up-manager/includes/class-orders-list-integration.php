@@ -34,6 +34,7 @@ final class OrdersListIntegration
 	private function initializeHpos(): void
 	{
 		add_filter('woocommerce_order_list_table_prepare_items_query_args', [$this, 'filterHposQueryArgs']);
+		add_action('woocommerce_order_list_table_restrict_manage_orders', [$this, 'renderHposFilter'], 10, 2);
 		add_filter('manage_woocommerce_page_wc-orders_columns', [$this, 'addFollowUpColumn']);
 		add_action('manage_woocommerce_page_wc-orders_custom_column', [$this, 'renderHposColumn'], 10, 2);
 	}
@@ -41,8 +42,42 @@ final class OrdersListIntegration
 	private function initializeLegacy(): void
 	{
 		add_action('pre_get_posts', [$this, 'filterLegacyQuery']);
+		add_action('restrict_manage_posts', [$this, 'renderLegacyFilter'], 10, 2);
 		add_filter('manage_edit-shop_order_columns', [$this, 'addFollowUpColumn']);
 		add_action('manage_shop_order_posts_custom_column', [$this, 'renderLegacyColumn'], 10, 2);
+	}
+
+	public function renderHposFilter(string $order_type, string $which): void
+	{
+		if ('shop_order' !== $order_type || 'top' !== $which) {
+			return;
+		}
+
+		$this->renderFollowUpFilter();
+	}
+
+	public function renderLegacyFilter(string $post_type, string $which): void
+	{
+		$screen = get_current_screen();
+		if ('shop_order' !== $post_type || 'top' !== $which || null === $screen || 'edit-shop_order' !== $screen->id) {
+			return;
+		}
+
+		$this->renderFollowUpFilter();
+	}
+
+	private function renderFollowUpFilter(): void
+	{
+		$selected_value = isset($_GET[self::FILTER_KEY]) && is_string($_GET[self::FILTER_KEY]) && 'yes' === $_GET[self::FILTER_KEY]
+			? 'yes'
+			: '';
+
+		?>
+		<select name="<?php echo esc_attr(self::FILTER_KEY); ?>">
+			<option value="" <?php selected($selected_value, ''); ?>><?php echo esc_html__('All orders', 'order-follow-up-manager'); ?></option>
+			<option value="yes" <?php selected($selected_value, 'yes'); ?>><?php echo esc_html__('Follow-up required', 'order-follow-up-manager'); ?></option>
+		</select>
+		<?php
 	}
 
 	/**

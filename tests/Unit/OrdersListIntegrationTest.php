@@ -79,6 +79,107 @@ final class OrdersListIntegrationTest extends TestCase
 		self::assertSame('', $output);
 	}
 
+	public function test_hpos_filter_renders_for_orders_in_top_area_with_shared_parameter_and_two_options(): void
+	{
+		$_GET['nem_follow_up_required'] = 'yes';
+		$output = $this->renderFilter(static function (OrdersListIntegration $integration): void {
+			$integration->renderHposFilter('shop_order', 'top');
+		});
+
+		$this->assertFilterMarkup($output, true);
+	}
+
+	public function test_hpos_filter_does_not_render_for_other_order_types_or_bottom_area(): void
+	{
+		$integration = new OrdersListIntegration(new OrderFollowUpMetadata());
+		foreach ([['shop_order_refund', 'top'], ['shop_order', 'bottom']] as [$order_type, $which]) {
+			$output = $this->renderFilter(static function () use ($integration, $order_type, $which): void {
+				$integration->renderHposFilter($order_type, $which);
+			});
+			self::assertSame('', $output);
+		}
+	}
+
+	public function test_legacy_filter_renders_only_on_orders_screen_top_area(): void
+	{
+		require_once ABSPATH . 'wp-admin/includes/screen.php';
+		require_once ABSPATH . 'wp-admin/includes/class-wp-screen.php';
+		$integration = new OrdersListIntegration(new OrderFollowUpMetadata());
+		set_current_screen('edit-shop_order');
+		try {
+			$output = $this->renderFilter(static function () use ($integration): void {
+				$integration->renderLegacyFilter('shop_order', 'top');
+			});
+			$this->assertFilterMarkup($output, false);
+
+			set_current_screen('edit-product');
+			$output = $this->renderFilter(static function () use ($integration): void {
+				$integration->renderLegacyFilter('shop_order', 'top');
+			});
+			self::assertSame('', $output);
+
+			set_current_screen('edit-shop_order');
+			$output = $this->renderFilter(static function () use ($integration): void {
+				$integration->renderLegacyFilter('shop_order', 'bottom');
+			});
+			self::assertSame('', $output);
+		} finally {
+			set_current_screen(null);
+		}
+	}
+
+	#[DataProvider('inactiveDropdownValues')]
+	public function test_dropdown_selects_all_orders_for_empty_or_invalid_values(mixed $value, bool $parameter_exists): void
+	{
+		if ($parameter_exists) {
+			$_GET['nem_follow_up_required'] = $value;
+		} else {
+			unset($_GET['nem_follow_up_required']);
+		}
+
+		foreach ([
+			static fn (OrdersListIntegration $integration) => $integration->renderHposFilter('shop_order', 'top'),
+			static fn (OrdersListIntegration $integration) => $integration->renderLegacyFilter('shop_order', 'top'),
+		] as $render) {
+			require_once ABSPATH . 'wp-admin/includes/screen.php';
+			require_once ABSPATH . 'wp-admin/includes/class-wp-screen.php';
+			set_current_screen('edit-shop_order');
+			$output = $this->renderFilter($render);
+			self::assertMatchesRegularExpression('/<option value=""\s+selected=["\']selected["\']>All orders<\/option>/', $output);
+			self::assertDoesNotMatchRegularExpression('/<option value="yes"\s+selected=["\']selected["\']>/', $output);
+		}
+		set_current_screen(null);
+	}
+
+	public static function inactiveDropdownValues(): array
+	{
+		return [
+			'missing' => [null, false],
+			'empty' => ['', true],
+			'invalid' => ['invalid', true],
+			'array' => [['yes'], true],
+		];
+	}
+
+	private function renderFilter(callable $render): string
+	{
+		ob_start();
+		$render(new OrdersListIntegration(new OrderFollowUpMetadata()));
+		return (string) ob_get_clean();
+	}
+
+	private function assertFilterMarkup(string $output, bool $yes_selected): void
+	{
+		self::assertStringContainsString('<select name="nem_follow_up_required">', $output);
+		self::assertSame(2, substr_count($output, '<option '));
+		self::assertStringContainsString('value=""', $output);
+		self::assertStringContainsString('>All orders</option>', $output);
+		self::assertStringContainsString('value="yes"', $output);
+		self::assertStringContainsString('>Follow-up required</option>', $output);
+		self::assertSame($yes_selected, 1 === preg_match('/<option value="yes"\s+selected=["\']selected["\']>/', $output));
+		self::assertSame(!$yes_selected, 1 === preg_match('/<option value=""\s+selected=["\']selected["\']>/', $output));
+	}
+
 	public function test_hpos_query_args_are_unchanged_when_filter_is_inactive(): void
 	{
 		$args = ['status' => ['wc-processing'], 'meta_query' => [['key' => 'existing', 'value' => 'value']]];
