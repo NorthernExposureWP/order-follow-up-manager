@@ -12,6 +12,8 @@ use Automattic\WooCommerce\Utilities\OrderUtil;
 final class OrdersListIntegration
 {
 	private const string COLUMN_KEY = 'nem_follow_up_required';
+	private const string FILTER_KEY = 'nem_follow_up_required';
+	private const string REQUIRED_META_KEY = '_nem_follow_up_required';
 
 	public function __construct(private OrderFollowUpMetadata $metadata)
 	{
@@ -31,14 +33,68 @@ final class OrdersListIntegration
 
 	private function initializeHpos(): void
 	{
+		add_filter('woocommerce_order_list_table_prepare_items_query_args', [$this, 'filterHposQueryArgs']);
 		add_filter('manage_woocommerce_page_wc-orders_columns', [$this, 'addFollowUpColumn']);
 		add_action('manage_woocommerce_page_wc-orders_custom_column', [$this, 'renderHposColumn'], 10, 2);
 	}
 
 	private function initializeLegacy(): void
 	{
+		add_action('pre_get_posts', [$this, 'filterLegacyQuery']);
 		add_filter('manage_edit-shop_order_columns', [$this, 'addFollowUpColumn']);
 		add_action('manage_shop_order_posts_custom_column', [$this, 'renderLegacyColumn'], 10, 2);
+	}
+
+	/**
+	 * @param array<string, mixed> $query_args
+	 * @return array<string, mixed>
+	 */
+	public function filterHposQueryArgs(array $query_args): array
+	{
+		if (!$this->isFollowUpFilterActive()) {
+			return $query_args;
+		}
+
+		$query_args['meta_query'] = $this->addFollowUpMetaCondition($query_args['meta_query'] ?? null);
+
+		return $query_args;
+	}
+
+	public function filterLegacyQuery(\WP_Query $query): void
+	{
+		if (!is_admin() || !$query->is_main_query() || 'shop_order' !== $query->get('post_type') || !$this->isFollowUpFilterActive()) {
+			return;
+		}
+
+		$query->set('meta_query', $this->addFollowUpMetaCondition($query->get('meta_query')));
+	}
+
+	private function isFollowUpFilterActive(): bool
+	{
+		return isset($_GET[self::FILTER_KEY]) && is_string($_GET[self::FILTER_KEY]) && 'yes' === $_GET[self::FILTER_KEY];
+	}
+
+	/**
+	 * @param mixed $existing_meta_query
+	 * @return array<string|int, mixed>
+	 */
+	private function addFollowUpMetaCondition(mixed $existing_meta_query): array
+	{
+		$follow_up_clause = [
+			'key' => self::REQUIRED_META_KEY,
+			'value' => 'yes',
+			'compare' => '=',
+		];
+
+		if (!is_array($existing_meta_query) || [] === $existing_meta_query) {
+			return [$follow_up_clause];
+		}
+
+		return [
+			'relation' => 'AND',
+			$existing_meta_query,
+			$follow_up_clause,
+		];
 	}
 
 	/**
