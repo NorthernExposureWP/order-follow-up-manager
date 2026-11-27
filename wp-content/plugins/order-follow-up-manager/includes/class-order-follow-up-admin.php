@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace NorthernExposure\OrderFollowUpManager;
 
 use WC_Order;
-use WC_Order_Refund;
 
 /**
  * Adds follow-up controls to the WooCommerce order edit screen.
@@ -73,7 +72,7 @@ final class OrderFollowUpAdmin
 	}
 
 	/**
-	 * Save submitted controls after WooCommerce has completed its order saves.
+	 * Save submitted controls after WooCommerce's core order-save callbacks.
 	 * The second hook argument differs between HPOS and legacy order storage and is intentionally unused.
 	 */
 	public function saveFields(int $order_id): void
@@ -91,7 +90,7 @@ final class OrderFollowUpAdmin
 		}
 
 		$order = wc_get_order($order_id);
-		if (!$order instanceof WC_Order || $order instanceof WC_Order_Refund || 'shop_order' !== $order->get_type() || !$this->canEditOrder($order_id)) {
+		if (!$order instanceof WC_Order || 'shop_order' !== $order->get_type() || !$this->canEditOrder($order_id)) {
 			return;
 		}
 
